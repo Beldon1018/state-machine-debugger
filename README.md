@@ -1,5 +1,28 @@
 # State Machine Debugger
 
-This repository is the clean starting point for a browser-based state machine editor and debugger evaluation task.
+浏览器端状态机编辑与调试工具，使用 React + TypeScript + [React Flow](https://reactflow.dev) 实现。
 
-Implementation is intentionally absent. See `TASK.md` for the exact task prompt.
+## 功能
+
+- **画布编辑**：双击空白新建状态，从状态边缘拖出连线创建转换，拖拽移动，Delete 删除
+- **检查器**：编辑状态名称、初始/终态标记，转换的事件名与守卫表达式（JS 表达式，实时语法校验）
+- **静态分析**：自动识别不可达状态、死胡同、初始状态缺失/重复、非确定性转换、空事件、悬空转换、守卫语法错误；问题同时标注在画布（红/橙高亮）和问题列表中，点击问题自动定位
+- **调试器**：输入上下文 JSON 和事件序列，逐步前进/回退/自动播放；每步展示参与判断的转换、守卫求值结果和成功/失败原因；无可用转换或命中多条转换时停止并说明，绝不随机选择；调试不修改原始流程
+- **工具**：撤销/重做（Ctrl+Z / Ctrl+Shift+Z）、dagre 自动布局、缩放平移、小地图导航、JSON 导入导出、localStorage 本地保存
+
+## 运行
+
+```bash
+npm install
+npm run dev      # 开发服务器 http://localhost:5173
+npm run build    # 类型检查 + 生产构建
+npm run preview  # 预览构建产物
+```
+
+首次打开会载入一个故意带有不可达状态、死胡同和非确定性转换的订单履约示例流程，可直接用于体验分析与调试功能。
+
+## 目录结构
+
+- `src/model/` — 纯逻辑层：状态机模型、守卫求值、静态分析、事件模拟、dagre 布局、示例与 JSON 读写
+- `src/components/` — React Flow 画布、自定义状态节点/自环边、检查器、问题列表、调试面板、工具栏
+- `src/hooks/useMachineHistory.ts` — 撤销/重做历史（支持拖拽与输入的暂态合并）
