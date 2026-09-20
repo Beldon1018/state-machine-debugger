@@ -1,5 +1,111 @@
-# State Machine Debugger
+# 状态机编辑与调试工具
 
-This repository is the clean starting point for a browser-based state machine editor and debugger evaluation task.
+浏览器端的业务状态机编辑器与逐步调试器，用于在配置复杂后主动发现**不可达状态、非结束死胡同、初始状态配置错误、非确定性转换**等问题，并以事件序列逐步解释每一步的执行结果。
 
-Implementation is intentionally absent. See `TASK.md` for the exact task prompt.
+- 画布基于成熟的 [React Flow（`@xyflow/react` v12）](https://reactflow.dev/)，不自行实现底层画布
+- React 18 + TypeScript + Vite，自动布局使用 dagre
+- 守卫条件使用内置的安全表达式求值器（手写词法/语法分析，不使用 `eval`）
+
+## 快速开始
+
+```bash
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # 类型检查 + 生产构建
+npx tsx scripts/smoke.ts   # 核心逻辑冒烟测试（49 项）
+```
+
+浏览器测试（需要 Playwright chromium）：
+
+```bash
+npx tsx scripts/ui-test.ts     # 编辑/调试/撤销/导入导出/本地保存主流程
+npx tsx scripts/ui-fail.ts     # 歧义停止、非法 JSON 等失败路径
+npx tsx scripts/ui-import.ts   # JSON 导入导出与位置保留
+```
+
+## 编辑能力
+
+- 双击画布空白处（或工具栏“新状态”）创建状态；拖拽移动位置
+- 从状态边缘的连接点拖出连线建立转换，支持自环与双向转换
+- 右侧属性面板编辑状态名称、初始状态（单选互斥）、结束状态，以及转换的事件名与守卫条件
+- `Delete` / `Backspace` 删除选中元素；拖拽结束才产生一个撤销历史条目，文本编辑失焦后入栈
+- 撤销重做：工具栏按钮或 `Ctrl/⌘+Z`、`Ctrl/⌘+Shift+Z`、`Ctrl+Y`
+- 自动布局（dagre 分层布局）、缩放控件、小地图、“全图”定位、问题点击自动居中
+- JSON 导入导出（含节点坐标），结构校验会给出具体错误
+- 手动“本地保存/读取本地”，并有防抖自动保存与退出页面前保存（localStorage）
+
+## 静态检查
+
+左侧“问题列表”同时在画布元素上高亮（错误红色、警告琥珀色），点击任一条目会定位并选中对应状态或转换。
+
+| 检查 | 级别 | 说明 |
+| --- | --- | --- |
+| 缺少初始状态 / 多个初始状态 | 错误 | 初始必须唯一，否则调试无法开始 |
+| 不可达状态 | 错误 | 从初始状态按有向边 BFS 无法到达；画布上降低透明度并斜纹标记 |
+| 死胡同 | 错误 | 可达的非结束状态且没有任何出边 |
+| 非确定性转换 | 错误/警告 | 同一状态同一事件有多条转换；存在两条无守卫转换或守卫语法错误时为错误，否则为警告（守卫可能同时成立） |
+| 悬空转换 | 错误 | 引用了不存在的状态 |
+| 空状态名 / 重名 | 错误 | 名称必须非空且唯一 |
+| 空事件名 | 警告 | 没有事件的转换永远无法被事件触发 |
+| 守卫语法错误 | 错误 | 解析守卫表达式失败 |
+
+## 调试器
+
+1. 在底部面板输入上下文数据（JSON）与事件序列（换行/逗号分隔）。
+2. 点击“开始调试”：编辑会被锁定，执行基于开始时的**深拷贝快照**，原始流程不会被修改。
+3. 每一步记录：执行前后状态、该事件下所有候选转换、每条守卫的布尔结果与实际求值值、成功/失败原因。
+4. 命中规则：
+   - 恰好一条守卫通过 → 转换成功，绿色高亮当前状态与被选中的转换；
+   - 0 条通过（或该事件没有任何转换）→ 停止并说明；
+   - 多条同时通过 → **停止，绝不随机选择**；
+   - 守卫执行出错（如除零、未知变量、语法错误）→ 停止并给出错误信息；
+   - 当前在结束状态时事件不再处理；
+   - 全部事件处理完且位于结束状态 → 正常完成。
+5. 支持前进、回退（回退后前进会基于回退点重新线性执行）、重新开始、退出调试。
+
+### 守卫表达式
+
+支持：数字/字符串/布尔/null 字面量，变量与点路径（`user.level`），下标（`items[0]`），
+算术 `+ - * / %`，比较 `< <= > >= == != === !==`，逻辑 `&& || !`，三元 `a ? b : c`，括号；
+白名单函数 `length / min / max / abs / round / floor / includes / not`，以及字符串方法
+`includes / startsWith / endsWith`。
+
+示例：
+
+```text
+paidAmount >= amount && vip === true
+amount > 10000 || user.tags[0] === "vip"
+includes(couponCodes, "NEW")
+```
+
+## 内置示例
+
+载入示例（首次进入自动载入，或工具栏“载入示例”）是一个订单流程，刻意包含：不可达的废弃状态、
+非结束死胡同、必然命中两条无守卫转换的 `TIMEOUT`、守卫可能重叠的 `SUBMIT`、空事件转换以及一处守卫语法错误，
+便于直接观察问题高亮与调试停止行为。
+
+## 目录结构
+
+```
+src/
+  types.ts                 数据模型
+  lib/
+    eval.ts                安全守卫表达式解析/求值
+    analyzer.ts            静态分析（不可达/死胡同/歧义等）
+    interpreter.ts         逐步执行引擎与停止原因
+    layout.ts              dagre 自动布局
+    machine.ts             JSON 序列化/反序列化与校验
+    sample.ts              内置示例
+  store/
+    useEditorStore.ts      图数据、撤销重做、本地持久化、定位
+    useDebugStore.ts       调试会话（快照、前进/回退/重启）
+  components/
+    FlowCanvas.tsx         React Flow 画布、高亮、定位与跟随
+    StateNodeView.tsx      自定义状态节点
+    TransitionEdgeView.tsx 自定义转换边与标签
+    IssueList.tsx          问题列表
+    Inspector.tsx          属性面板
+    DebugPanel.tsx         调试输入、控制与逐步轨迹
+    Toolbar.tsx            顶部工具栏
+scripts/                   冒烟测试与 Playwright UI 测试
+```
